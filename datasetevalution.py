@@ -34,3 +34,8 @@ Q3 = df['Area'].quantile(0.75)
 IQR = Q3 - Q1
 outliers = df[(df['Area'] < Q1 - 1.5 * IQR) | (df['Area'] > Q3 + 1.5 * IQR)]
 print(f"\nOutlier rows:\n{outliers[['State_Name', 'District_Name', 'Area', 'Production']]}")
+
+for col in ['Area', 'Production', 'Crop_Year']:
+    mean = df[col].mean()
+    median = df[col].median()
+    print(f"{col} - Mean: {mean:.2f}, Median: {median:.2f}, Outliers: {'Yes' if median > mean else 'No'}")
