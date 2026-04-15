@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Crop Recommender | Location Scout</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    
+    <style>
+        .scout-container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 2rem;
+            z-index: 10;
+            position: relative;
+        }
+        
+        .scout-layout {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+            margin-top: 2rem;
+        }
+
+        @media (max-width: 900px) {
+            .scout-layout {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .map-section {
+            background: var(--glass-bg);
+            backdrop-filter: blur(24px);
+            -webkit-backdrop-filter: blur(24px);
+            border: 1px solid var(--glass-border);
+            border-radius: 24px;
+            padding: 1.5rem;
+            box-shadow: var(--card-shadow);
+            animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1);
+        }
+
+        #map {
+            height: 500px;
+            border-radius: 16px;
+            width: 100%;
+            z-index: 1; /* Keep map below glass overlays */
+        }
+        
+        .map-instructions {
+            text-align: center;
+            color: var(--text-muted);
+            margin-bottom: 1rem;
+            font-size: 1.1rem;
+        }
+
+        .data-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            animation: fadeUp 0.8s cubic-bezier(0.2, 0.8, 0.2, 1) 0.2s backwards;
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+        }
+
+        .data-card {
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--glass-border);
+            border-top: 1px solid rgba(255,255,255,0.1);
+            padding: 1.5rem;
+            border-radius: 16px;
+            text-align: center;
+            transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            opacity: 0.5;
+        }
+
+        .data-card:hover {
+            transform: translateY(-8px) scale(1.05);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.4);
+            border-color: rgba(255, 255, 255, 0.3);
+            background: rgba(0, 0, 0, 0.4);
+        }
+
+        .data-card.active {
+            opacity: 1;
+            background: linear-gradient(135deg, rgba(46, 204, 113, 0.15), rgba(59, 130, 246, 0.15));
+            border-color: rgba(46, 204, 113, 0.3);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+            transform: translateY(0);
+        }
+        
+        .data-card.active:hover {
+            transform: translateY(-8px) scale(1.05);
+            box-shadow: 0 20px 40px rgba(46, 204, 113, 0.4);
+        }
+
+        .data-label {
+            font-size: 0.9rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 0.5rem;
+        }
+
+        .data-value {
+            font-size: 1.8rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .data-value span {
+            font-size: 1rem;
+            color: var(--text-muted);
+            margin-left: 2px;
+        }
+
+        .full-width {
+            grid-column: 1 / -1;
+        }
+
+        #send-btn {
+            margin-top: auto;
+            opacity: 0.5;
+            pointer-events: none;
+            transition: all 0.3s ease;
+        }
+        
+        #send-btn.ready {
+            opacity: 1;
+            pointer-events: all;
+            box-shadow: 0 10px 30px -10px var(--primary-glow);
+        }
+
+        .loading-overlay {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(11, 15, 25, 0.7);
+            backdrop-filter: blur(5px);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            border-radius: 24px;
+            z-index: 10;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        .loading-overlay.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+        
+        /* Spinner for Scout */
+        .spinner {
+            width: 50px;
+            height: 50px;
+            border: 5px solid rgba(255, 255, 255, 0.1);
+            border-left-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        /* Custom Marker Animation */
+        .pulse-marker {
+            width: 24px;
+            height: 24px;
+            background: var(--primary);
+            border-radius: 50%;
+            border: 3px solid white;
+            box-shadow: 0 0 15px var(--primary-glow);
+            position: relative;
+        }
+        .pulse-marker::after {
+            content: '';
+            position: absolute;
+            top: -10px; left: -10px; right: -10px; bottom: -10px;
+            border: 2px solid var(--primary);
+            border-radius: 50%;
+            animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.5); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: scale(1.5); opacity: 0; }
+        }
+        
+        /* Search Box Styles */
+        .search-box {
+            display: flex;
+            margin-bottom: 1rem;
+            position: relative;
+            z-index: 1000; /* Above Leaflet map controls */
+            width: 100%;
+        }
+        .search-box input {
+            flex: 1;
+            padding: 1rem 1.25rem;
+            border-radius: 12px 0 0 12px;
+            border: 1px solid var(--glass-border);
+            border-top: 1px solid rgba(255,255,255,0.15);
+            background: rgba(0,0,0,0.4);
+            color: var(--text);
+            font-size: 1rem;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+        .search-box input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 15px rgba(46, 204, 113, 0.2);
+            background: rgba(0,0,0,0.6);
+        }
+        .search-box button {
+            width: auto;
+            border-radius: 0 12px 12px 0;
+            padding: 0 1.5rem;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.8), rgba(37, 99, 235, 0.8));
+            border: 1px solid var(--glass-border);
+            border-left: none;
+            cursor: pointer;
+            box-shadow: none;
+            transform: none;
+            font-size: 1.2rem;
+        }
+        .search-box button:hover {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+        }
+        .search-results {
+            position: absolute;
+            top: 105%;
+            left: 0;
+            right: 0;
+            background: rgba(11, 15, 25, 0.95);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--glass-border);
+            border-radius: 12px;
+            max-height: 250px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.6);
+        }
+        .search-results.hidden {
+            display: none;
+        }
+        .search-result-item {
+            padding: 1rem 1.25rem;
+            cursor: pointer;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.95rem;
+            transition: background 0.2s;
+        }
+        .search-result-item:hover {
+            background: rgba(46, 204, 113, 0.2);
+            color: white;
+        }
+        .search-result-item:last-child {
+            border-bottom: none;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="background-glass"></div>
+    
+    <div class="scout-container">
+        <a href="/" class="home-btn">← Return to Home</a>
+        <header>
+            <h1>Location<span>Scout</span></h1>
+            <p>Select your farm on the map to instantly estimate environmental parameters</p>
+        </header>
+
+        <div class="scout-layout">
+            
+            <!-- Map Panel -->
+            <div class="map-section" style="position: relative;">
+                <div class="map-instructions">📍 Tap anywhere on the globe or search a location</div>
+                
+                <div class="search-box">
+                    <input type="text" id="location-search" placeholder="Search city, region, or address..." autocomplete="off">
+                    <button id="search-btn" type="button">🔍</button>
+                    <div id="search-results" class="search-results hidden"></div>
+                </div>
+
+                <div id="map"></div>
+                <div class="loading-overlay" id="loading">
+                    <div class="spinner"></div>
+                    <p style="margin-top: 1rem; font-weight: 600;">Analyzing location data...</p>
+                </div>
+            </div>
+
+            <!-- Data Panel -->
+            <div class="data-section">
+                <div class="data-grid">
+                    <div class="data-card" id="card-temp">
+                        <div class="data-label">Temperature</div>
+                        <div class="data-value" id="val-temp">--<span>°C</span></div>
+                    </div>
+                    <div class="data-card" id="card-humidity">
+                        <div class="data-label">Humidity</div>
+                        <div class="data-value" id="val-humidity">--<span>%</span></div>
+                    </div>
+                    <div class="data-card full-width" id="card-season">
+                        <div class="data-label">Estimated Season</div>
+                        <div class="data-value" id="val-season" style="font-size: 2rem; color: #3b82f6;">--</div>
+                    </div>
+                    <div class="data-card" id="card-ph">
+                        <div class="data-label">Soil pH</div>
+                        <div class="data-value" id="val-ph">--</div>
+                    </div>
+                    <div class="data-card" id="card-n">
+                        <div class="data-label">Nitrogen (N)</div>
+                        <div class="data-value" id="val-n">--</div>
+                    </div>
+                    <div class="data-card" id="card-p">
+                        <div class="data-label">Phosphorus (P)</div>
+                        <div class="data-value" id="val-p" title="Estimated based on expected crop requirements">--</div>
+                    </div>
+                    <div class="data-card" id="card-k">
+                        <div class="data-label">Potassium (K)</div>
+                        <div class="data-value" id="val-k" title="Estimated based on expected crop requirements">--</div>
+                    </div>
+                </div>
+
+                <button id="send-btn" type="button">Send to Dashboard <span class="arrow">→</span></button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Initialize Map
+        const map = L.map('map').setView([20.5937, 78.9629], 4); // Default center on India
+        
+        const customIcon = L.divIcon({
+            className: 'custom-div-icon',
+            html: "<div class='pulse-marker'></div>",
+            iconSize: [24, 24],
+            iconAnchor: [12, 12]
+        });
+
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
+
+        let currentMarker = null;
+        let fetchedData = null;
+
+        // Map Click Event
+        map.on('click', async function(e) {
+            const lat = e.latlng.lat;
+            const lon = e.latlng.lng;
+
+            if (currentMarker) {
+                map.removeLayer(currentMarker);
+            }
+            // Add custom animated marker
+            currentMarker = L.marker([lat, lon], {icon: customIcon}).addTo(map);
+            
+            // Smoothly fly to the clicked location
+            map.flyTo([lat, lon], 7, {
+                animate: true,
+                duration: 1.5
+            });
+
+            // Fetch data from backend
+            document.getElementById('loading').classList.add('show');
+            
+            // Reset cards UI
+            document.querySelectorAll('.data-card').forEach(c => {
+                c.classList.remove('active');
+                c.style.transform = 'translateY(10px)';
+                c.style.opacity = '0';
+            });
+            document.getElementById('send-btn').classList.remove('ready');
+
+            try {
+                const response = await fetch('/scout-data', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lat, lon })
+                });
+
+                const data = await response.json();
+                
+                if (data.success) {
+                    fetchedData = data;
+                    
+                    // Update DOM
+                    document.getElementById('val-temp').innerHTML = `${data.temp !== null ? data.temp : '--'}<span>°C</span>`;
+                    document.getElementById('val-humidity').innerHTML = `${data.humidity !== null ? data.humidity : '--'}<span>%</span>`;
+                    document.getElementById('val-season').innerText = data.season ? (data.season.charAt(0).toUpperCase() + data.season.slice(1)) : '--';
+                    document.getElementById('val-ph').innerText = data.soil_ph !== null ? data.soil_ph : '--';
+                    document.getElementById('val-n').innerText = data.nitrogen !== null ? data.nitrogen : '--';
+                    document.getElementById('val-p').innerText = data.phosphorus !== null ? data.phosphorus : '--';
+                    document.getElementById('val-k').innerText = data.potassium !== null ? data.potassium : '--';
+
+                    // Animate cards sequentially flying in
+                    let delay = 0;
+                    ['temp', 'humidity', 'season', 'ph', 'n', 'p', 'k'].forEach(key => {
+                        setTimeout(() => {
+                            const card = document.getElementById(`card-${key}`);
+                            card.style.transform = '';
+                            card.style.opacity = '';
+                            card.classList.add('active');
+                        }, delay);
+                        delay += 120;
+                    });
+
+                    // Activate button
+                    setTimeout(() => {
+                        document.getElementById('send-btn').classList.add('ready');
+                    }, delay);
+                } else {
+                    alert('Error analyzing location: ' + (data.error || 'Unknown error'));
+                }
+
+            } catch (err) {
+                console.error(err);
+                alert("Failed to reach server.");
+            } finally {
+                document.getElementById('loading').classList.remove('show');
+            }
+        });
+
+        // Search Logic
+        const searchInput = document.getElementById('location-search');
+        const searchBtn = document.getElementById('search-btn');
+        const searchResults = document.getElementById('search-results');
+
+        async function performSearch() {
+            const query = searchInput.value.trim();
+            if (!query) return;
+            
+            searchBtn.innerHTML = '⏳';
+            try {
+                // Using OpenStreetMap Nominatim Free Geocoding API
+                const res = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5`);
+                const data = await res.json();
+                
+                searchResults.innerHTML = '';
+                if (data.length > 0) {
+                    data.forEach(item => {
+                        const div = document.createElement('div');
+                        div.className = 'search-result-item';
+                        div.textContent = item.display_name;
+                        div.onclick = () => {
+                            searchResults.classList.add('hidden');
+                            searchInput.value = item.display_name;
+                            const lat = parseFloat(item.lat);
+                            const lon = parseFloat(item.lon);
+                            
+                            // Trigger the map click event simulation
+                            map.fire('click', { latlng: L.latLng(lat, lon) });
+                        };
+                        searchResults.appendChild(div);
+                    });
+                    searchResults.classList.remove('hidden');
+                } else {
+                    searchResults.innerHTML = '<div class="search-result-item">No results found</div>';
+                    searchResults.classList.remove('hidden');
+                }
+            } catch (e) {
+                console.error(e);
+            }
+            searchBtn.innerHTML = '🔍';
+        }
+
+        searchBtn.addEventListener('click', performSearch);
+        searchInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') performSearch();
+        });
+        
+        // Hide results when clicking outside
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.search-box')) {
+                searchResults.classList.add('hidden');
+            }
+        });
+
+        // Send to dashboard logic
+        document.getElementById('send-btn').addEventListener('click', () => {
+            if (!fetchedData) return;
+
+            // Load existing snapshot or create new
+            let snapshot = {};
+            const existing = sessionStorage.getItem('cropFormSnapshot');
+            if (existing) {
+                try { snapshot = JSON.parse(existing); } catch(e){}
+            }
+
+            // Populate snapshot with fetched data
+            if (fetchedData.temp !== null) snapshot.temp = fetchedData.temp;
+            if (fetchedData.humidity !== null) snapshot.humidity = fetchedData.humidity;
+            if (fetchedData.season) snapshot.season = fetchedData.season;
+            if (fetchedData.soil_ph !== null) snapshot.soil_ph = fetchedData.soil_ph;
+            if (fetchedData.nitrogen !== null) snapshot.nitrogen = fetchedData.nitrogen;
+            if (fetchedData.phosphorus !== null) snapshot.phosphorus = fetchedData.phosphorus;
+            if (fetchedData.potassium !== null) snapshot.potassium = fetchedData.potassium;
+            
+            // Set some smart defaults for the rest if not already set by prior use
+            if (!snapshot.soil) snapshot.soil = "Alluvial soil";
+            if (!snapshot.water_source) snapshot.water_source = "irrigated";
+
+            sessionStorage.setItem('cropFormSnapshot', JSON.stringify(snapshot));
+            
+            // Redirect
+            window.location.href = '/dashboard';
+        });
+
+    </script>
+</body>
+</html>

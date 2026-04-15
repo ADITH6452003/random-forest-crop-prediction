@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Crop Recommender</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+<body>
+
+    <div class="background-glass"></div>
+    <div class="dashboard-layout">
+        
+        <!-- Left Panel: Crop Prediction -->
+        <div class="left-panel">
+            <a href="/" class="home-btn">← Return to Home</a>
+            <header>
+            <h1>Plant<span>Genius</span></h1>
+            <p>Smart crop predictions powered by Machine Learning</p>
+        </header>
+
+        <form id="prediction-form" class="glass-form">
+            <div class="grid">
+                <!-- Soil Details -->
+                <div class="input-group floating">
+                    <select name="soil" id="soil" required>
+                        <option value="" disabled></option>
+                        <option value="Alluvial soil" selected>Alluvial soil</option>
+                        <option value="Loamy soil">Loamy soil</option>
+                        <option value="Clay soil">Clay soil</option>
+                        <option value="Sandy soil">Sandy soil</option>
+                        <option value="Laterite soil">Laterite soil</option>
+                        <option value="Black Soil">Black Soil</option>
+                        <option value="Red soil">Red soil</option>
+                    </select>
+                    <label for="soil">Soil Type</label>
+                </div>
+
+                <!-- Season -->
+                <div class="input-group floating">
+                    <select name="season" id="season" required>
+                        <option value="" disabled></option>
+                        <option value="kharif" selected>Kharif</option>
+                        <option value="rabi">Rabi</option>
+                        <option value="Zaid">Zaid</option>
+                    </select>
+                    <label for="season">Season</label>
+                </div>
+
+                <!-- Environmentals -->
+                <div class="input-group floating">
+                    <input type="number" step="0.1" min="0" max="14" name="soil_ph" id="soil_ph" value="6.5" required>
+                    <label for="soil_ph">Soil pH</label>
+                </div>
+
+                <div class="input-group floating">
+                    <input type="number" step="0.1" name="temp" id="temp" value="28.5" required>
+                    <label for="temp">Temperature (°C)</label>
+                </div>
+
+                <div class="input-group floating">
+                    <input type="number" step="0.1" name="humidity" id="humidity" value="70.0" required>
+                    <label for="humidity">Humidity (%)</label>
+                </div>
+
+                <!-- Nutrients -->
+                <div class="input-group floating">
+                    <input type="number" step="0.1" name="nitrogen" id="nitrogen" value="80" required>
+                    <label for="nitrogen">Nitrogen (N)</label>
+                </div>
+
+                <div class="input-group floating">
+                    <input type="number" step="0.1" name="phosphorus" id="phosphorus" value="40" required>
+                    <label for="phosphorus">Phosphorus (P)</label>
+                </div>
+
+                <div class="input-group floating">
+                    <input type="number" step="0.1" name="potassium" id="potassium" value="40" required>
+                    <label for="potassium">Potassium (K)</label>
+                </div>
+
+                <!-- Requirements -->
+                <div class="input-group floating">
+                    <select name="water_source" id="water_source" required>
+                        <option value="" disabled></option>
+                        <option value="irrigated" selected>Irrigated</option>
+                        <option value="rainfed">Rainfed</option>
+                    </select>
+                    <label for="water_source">Water Source</label>
+                </div>
+            </div>
+
+            <div class="form-actions">
+                <button type="submit" id="submit-btn">Predict Top Crop <span class="arrow">→</span></button>
+                <button type="button" id="choose-map-btn" class="location-btn" style="background: rgba(139, 92, 246, 0.2); border-color: rgba(139, 92, 246, 0.5);">🗺️ Choose on Map</button>
+                <button type="button" id="location-btn" class="location-btn">📍 Auto Locate</button>
+            </div>
+        </form>
+
+        <!-- Result Card -->
+        <div id="result-card" class="result-card hidden">
+            <div class="result-header">
+                <h3 id="result-title">Optimal Crop Recommendations</h3>
+                <button type="button" id="copy-btn" class="copy-btn" title="Copy data to form">📋 Copy to Form</button>
+            </div>
+            <ol class="crop-list" id="crop-list">
+                <!-- List items will be injected here -->
+            </ol>
+        </div>
+
+        </div> <!-- End left-panel -->
+
+    <!-- Script to handle JSON conversion -->
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        document.getElementById('prediction-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const btn = document.getElementById('submit-btn');
+            const originalText = btn.innerHTML;
+            btn.innerHTML = `<div class="typing-indicator btn-spinner"><span></span><span></span><span></span></div>`;
+            btn.classList.add("loading");
+
+            // Hide old result
+            const resultCard = document.getElementById('result-card');
+            resultCard.classList.add('hidden');
+            resultCard.classList.remove('show-result');
+            
+            const cropList = document.getElementById('crop-list');
+            cropList.innerHTML = ''; // clear previous results
+
+            const formData = new FormData(e.target);
+            const jsonData = Object.fromEntries(formData.entries());
+
+            try {
+                const response = await fetch('/predict', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(jsonData)
+                });
+                
+                const data = await response.json();
+                
+                if(data.success) {
+                    window.lastPredictedCrops = data.predictions; // Save predictions to use in chat
+                    data.predictions.forEach(crop => {
+                        const li = document.createElement('li');
+                        li.className = 'crop-item';
+                        li.innerText = crop.toUpperCase();
+                        cropList.appendChild(li);
+                    });
+                     
+                    resultCard.classList.remove('hidden');
+                    // Tiny delay to trigger CSS transition smoothly
+                    setTimeout(() => resultCard.classList.add('show-result'), 50);
+                } else {
+                    alert("Error: " + data.error);
+                }
+
+            } catch (err) {
+                console.error(err);
+                alert("Failed to connect to AI engine.");
+            }
+
+            btn.innerHTML = originalText;
+            btn.classList.remove("loading");
+        });
+
+        // Location button
+        document.getElementById('location-btn').addEventListener('click', () => {
+            const btn = document.getElementById('location-btn');
+            btn.textContent = '📍 Locating...';
+            btn.disabled = true;
+
+            navigator.geolocation.getCurrentPosition(async (pos) => {
+                try {
+                    const res = await fetch('/location-data', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ lat: pos.coords.latitude, lon: pos.coords.longitude })
+                    });
+                    const d = await res.json();
+                    if (d.success) {
+                        if (d.temp !== null) document.getElementById('temp').value = d.temp;
+                        if (d.humidity !== null) document.getElementById('humidity').value = d.humidity;
+                        if (d.season) document.getElementById('season').value = d.season;
+                        btn.textContent = '✅ Location Applied';
+                        setTimeout(() => { btn.textContent = '📍 Use My Location'; btn.disabled = false; }, 2500);
+                    } else {
+                        btn.textContent = '❌ Failed'; 
+                        setTimeout(() => { btn.textContent = '📍 Use My Location'; btn.disabled = false; }, 2000);
+                    }
+                } catch(e) {
+                    btn.textContent = '❌ Error';
+                    setTimeout(() => { btn.textContent = '📍 Use My Location'; btn.disabled = false; }, 2000);
+                }
+            }, () => {
+                btn.textContent = '❌ Permission Denied';
+                setTimeout(() => { btn.textContent = '📍 Auto Locate'; btn.disabled = false; }, 2000);
+            });
+        });
+
+        // Choose on map link
+        document.getElementById('choose-map-btn').addEventListener('click', () => {
+            // Save current form state so they don't lose it when navigating away and back
+            const form = document.getElementById('prediction-form');
+            const fields = ['soil', 'water_source'];
+            const snapshot = {};
+            fields.forEach(f => {
+                const el = form.elements[f];
+                if (el) snapshot[f] = el.value;
+            });
+            sessionStorage.setItem('cropFormPartial', JSON.stringify(snapshot));
+            window.location.href = '/scout';
+        });
+
+        // Copy to form button
+        document.getElementById('copy-btn').addEventListener('click', () => {
+            const form = document.getElementById('prediction-form');
+            const fields = ['soil', 'season', 'soil_ph', 'temp', 'humidity', 'nitrogen', 'phosphorus', 'potassium', 'water_source'];
+            const snapshot = {};
+            fields.forEach(f => {
+                const el = form.elements[f];
+                if (el) snapshot[f] = el.value;
+            });
+            // Store snapshot and predicted crops in sessionStorage for easy re-use
+            snapshot.predicted_crops = window.lastPredictedCrops || [];
+            sessionStorage.setItem('cropFormSnapshot', JSON.stringify(snapshot));
+
+            const btn = document.getElementById('copy-btn');
+            btn.textContent = '✅ Copied!';
+            setTimeout(() => btn.textContent = '📋 Copy to Form', 2000);
+        });
+
+        // Restore snapshot if present (e.g. after page reload or returning from scout map)
+        const snapshot = sessionStorage.getItem('cropFormSnapshot');
+        const partial = sessionStorage.getItem('cropFormPartial');
+        
+        if (partial) {
+            try {
+                const p = JSON.parse(partial);
+                const form = document.getElementById('prediction-form');
+                ['soil','water_source'].forEach(f => {
+                    if (p[f] !== undefined && form.elements[f]) form.elements[f].value = p[f];
+                });
+            } catch(e){}
+        }
+
+        if (snapshot) {
+            try {
+                const s = JSON.parse(snapshot);
+                const form = document.getElementById('prediction-form');
+                ['soil','season','soil_ph','temp','humidity','nitrogen','phosphorus','potassium','water_source'].forEach(f => {
+                    if (s[f] !== undefined && form.elements[f]) form.elements[f].value = s[f];
+                });
+                if (s.predicted_crops) window.lastPredictedCrops = s.predicted_crops;
+                // clear snapshot immediately after using it so manual changes aren't overridden on next load
+                sessionStorage.removeItem('cropFormSnapshot');
+            } catch(e) {}
+        }
+
+        // Chatbot logic
+        const chatForm = document.getElementById('chat-form');
+        const chatInput = document.getElementById('chat-input');
+        const chatMessages = document.getElementById('chat-messages');
+
+        let activeMode = 'general';
+
+        // Tab switching
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                activeMode = btn.dataset.mode;
+                const placeholders = {
+                    general: 'Ask about crops, soil, pests...',
+                    fertilizer: 'Enter crop name for fertilizer advice...',
+                    market: 'Enter crop name for market price...'
+                };
+                chatInput.placeholder = placeholders[activeMode];
+            });
+        });
+
+        // Chat toggling removed since it's now always open
+
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const message = chatInput.value.trim();
+            if (!message) return;
+
+            appendMessage('user', message);
+            chatInput.value = '';
+
+            // Add a proper typing dot loader for chat
+            const loadingHTML = `<div class="typing-indicator"><span></span><span></span><span></span></div>`;
+            const loadingMsgId = appendMessage('bot', loadingHTML);
+
+            const formData = new FormData(document.getElementById('prediction-form'));
+            const contextData = Object.fromEntries(formData.entries());
+            if (window.lastPredictedCrops && window.lastPredictedCrops.length > 0) {
+                contextData.predicted_crops = window.lastPredictedCrops;
+            }
+            let contextStr = Object.keys(contextData).length ? JSON.stringify(contextData) : '';
+
+            try {
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message, context: contextStr, mode: activeMode })
+                });
+
+                const data = await response.json();
+                document.getElementById(loadingMsgId).remove();
+
+                if (data.success) {
+                    appendMessage('bot', data.reply);
+                } else {
+                    appendMessage('bot', "Error: " + data.error);
+                }
+            } catch (err) {
+                console.error(err);
+                document.getElementById(loadingMsgId).remove();
+                appendMessage('bot', "Connection failed.");
+            }
+        });
+
+        function appendMessage(sender, text) {
+            const msgDiv = document.createElement('div');
+            msgDiv.classList.add('chat-message', `${sender}-message`);
+            
+            // Allow basic newlines
+            const formattedText = text.replace(/\n/g, '<br>');
+            msgDiv.innerHTML = formattedText;
+            
+            // Unique ID for easy removal (used for loading message)
+            const id = 'msg-' + Date.now();
+            msgDiv.id = id;
+            
+            chatMessages.appendChild(msgDiv);
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            return id;
+        }
+    });
+    </script>
+
+    <!-- Right Panel: Permanent Chatbot -->
+        <div class="right-panel">
+            <div id="chat-window" class="chat-window">
+                <div class="chat-header">
+                    <h4>🌱 AI Agronomist</h4>
+                </div>
+                <!-- Mode Tabs -->
+                <div class="chat-tabs">
+                    <button class="tab-btn active" data-mode="general">🌾 General</button>
+                    <button class="tab-btn" data-mode="fertilizer">🧪 Fertilizer</button>
+                    <button class="tab-btn" data-mode="market">📈 Market Price</button>
+                </div>
+                <div class="chat-messages" id="chat-messages">
+                    <div class="chat-message bot-message">
+                        Hello! Select a mode above and ask me anything — fertilizer doses, market prices, or general farming advice!
+                    </div>
+                </div>
+                <form id="chat-form" class="chat-input-area">
+                    <input type="text" id="chat-input" placeholder="Type your question..." required autocomplete="off">
+                    <button type="submit">→</button>
+                </form>
+            </div>
+        </div>
+    </div> <!-- End Dashboard Layout -->
+</body>
+</html>
